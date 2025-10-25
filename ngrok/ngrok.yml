@@ -1,8 +1,0 @@
-version: "2"
-authtoken: ${NGROK_AUTHTOKEN}
-tunnels:
-  flask-app:
-    addr: ${FLASK_APP_SERVICE}:${FLASK_APP_PORT}
-    proto: http
-    hostname: ${NGROK_DOMAIN}
-    bind_tls: true

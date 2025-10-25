@@ -1,13 +1,13 @@
 import os
-from flask import Flask, request, jsonify
+import logging
+from flask import Flask, jsonify
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from supabase_client import SupabaseClient
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, date
-import logging
-import time
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -190,6 +190,7 @@ slack_utils = SlackUtils(supabase_client)
 def health_check():
     """Health check endpoint"""
     try:
+        # Test database connection
         db_status = "healthy"
         try:
             supabase_client.client.table('leave_requests').select('id').limit(1).execute()
@@ -200,12 +201,22 @@ def health_check():
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "database": db_status,
-            "scheduler": "running" if scheduler.running else "stopped"
+            "scheduler": "running" if scheduler.running else "stopped",
+            "version": "1.0.0"
         }
         
         return jsonify(health_info), 200
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+@flask_app.route("/ready", methods=["GET"])
+def readiness_check():
+    """Readiness check for Kubernetes"""
+    try:
+        supabase_client.client.table('leave_requests').select('id').limit(1).execute()
+        return jsonify({"status": "ready"}), 200
+    except Exception as e:
+        return jsonify({"status": "not ready", "error": str(e)}), 503
 
 # Slack command handlers
 @slack_app.command("/request-leave")
@@ -270,14 +281,80 @@ def handle_admin_update_balance(ack, body, client, logger):
             )
             return
         
-        # For now, send a message about how to use
-        message = """🔧 Admin Leave Balance Update
-        
-To update leave balances, use the following format in a direct message to me:
+        # Open admin modal for balance updates
+        try:
+            modal = {
+                "type": "modal",
+                "callback_id": "admin_update_modal",
+                "title": {"type": "plain_text", "text": "Update Leave Balance"},
+                "submit": {"type": "plain_text", "text": "Update"},
+                "close": {"type": "plain_text", "text": "Cancel"},
+                "blocks": [
+                    {
+                        "type": "input",
+                        "block_id": "user_input",
+                        "element": {
+                            "type": "users_select",
+                            "action_id": "user_select",
+                            "placeholder": {"type": "plain_text", "text": "Select user"}
+                        },
+                        "label": {"type": "plain_text", "text": "User"}
+                    },
+                    {
+                        "type": "section",
+                        "block_id": "leave_type_section",
+                        "text": {"type": "mrkdwn", "text": "Select leave type:"},
+                        "accessory": {
+                            "type": "static_select",
+                            "action_id": "leave_type_select",
+                            "placeholder": {"type": "plain_text", "text": "Select type"},
+                            "options": [
+                                {"text": {"type": "plain_text", "text": "Vacation"}, "value": "vacation"},
+                                {"text": {"type": "plain_text", "text": "Sick Leave"}, "value": "sick"},
+                                {"text": {"type": "plain_text", "text": "Personal"}, "value": "personal"},
+                                {"text": {"type": "plain_text", "text": "Other"}, "value": "other"}
+                            ]
+                        }
+                    },
+                    {
+                        "type": "input",
+                        "block_id": "days_input",
+                        "element": {
+                            "type": "plain_text_input",
+                            "action_id": "days_input",
+                            "placeholder": {"type": "plain_text", "text": "Enter number of days (use - to subtract)"}
+                        },
+                        "label": {"type": "plain_text", "text": "Days to add/subtract"}
+                    }
+                ]
+            }
+            
+            client.views_open(trigger_id=body["trigger_id"], view=modal)
+        except Exception as e:
+            logger.error(f"Error opening admin modal: {e}")
+            client.chat_postEphemeral(
+                channel=body["channel_id"],
+                user=user_id,
+                text="Error opening admin panel. Please try again."
+            )
+    except Exception as e:
+        logger.error(f"Error handling admin update: {e}")
 
-Available leave types: vacation, sick, personal, other
-Use positive numbers to add days, negative to subtract.
-        """
+@slack_app.command("/leave-history")
+def handle_leave_history(ack, body, client, logger):
+    """Handle leave history command"""
+    ack()
+    try:
+        user_id = body["user_id"]
+        leave_requests = supabase_client.get_user_leave_requests(user_id)
+        
+        if leave_requests:
+            message = "📋 Your Leave History:\n"
+            for req in leave_requests[:10]:  # Show last 10 requests
+                status_emoji = "✅" if req['status'] == 'approved' else "⏳" if req['status'] == 'pending' else "❌"
+                message += f"{status_emoji} {req['start_date']} to {req['end_date']} - {req['leave_type']} ({req['status']})\n"
+        else:
+            message = "No leave requests found."
         
         client.chat_postEphemeral(
             channel=body["channel_id"],
@@ -285,9 +362,9 @@ Use positive numbers to add days, negative to subtract.
             text=message
         )
     except Exception as e:
-        logger.error(f"Error handling admin update: {e}")
+        logger.error(f"Error handling leave history: {e}")
 
-# Modal submission handler
+# Modal submission handlers
 @slack_app.view("leave_request_modal")
 def handle_modal_submission(ack, body, client, view, logger):
     """Handle leave request modal submission"""
@@ -330,6 +407,40 @@ def handle_modal_submission(ack, body, client, view, logger):
             
     except Exception as e:
         logger.error(f"Error handling modal submission: {e}")
+
+@slack_app.view("admin_update_modal")
+def handle_admin_modal_submission(ack, body, client, view, logger):
+    """Handle admin update modal submission"""
+    ack()
+    try:
+        admin_user_id = body["user"]["id"]
+        
+        # Extract form values
+        values = view["state"]["values"]
+        target_user_id = values["user_input"]["user_select"]["selected_user"]
+        leave_type = values["leave_type_section"]["leave_type_select"]["selected_option"]["value"]
+        days = int(values["days_input"]["days_input"]["value"])
+        
+        # Update user balance
+        result = supabase_client.update_user_leave_balance(target_user_id, leave_type, days)
+        
+        if result:
+            # Get user info for confirmation
+            user_info = client.users_info(user=target_user_id)
+            user_name = user_info["user"]["real_name"]
+            
+            client.chat_postMessage(
+                channel=admin_user_id,
+                text=f"✅ Updated {user_name}'s {leave_type} balance by {days} days."
+            )
+        else:
+            client.chat_postMessage(
+                channel=admin_user_id,
+                text="❌ Failed to update balance. Please try again."
+            )
+            
+    except Exception as e:
+        logger.error(f"Error handling admin modal submission: {e}")
 
 # Button action handlers
 @slack_app.action("approve_leave")
@@ -420,29 +531,40 @@ def post_daily_leave_announcements():
 def start_socket_mode():
     """Start Socket Mode handler"""
     try:
-        # Start the Socket Mode handler
         socket_handler = SocketModeHandler(slack_app, os.environ["SLACK_APP_TOKEN"])
+        logger.info("Starting Socket Mode handler...")
         socket_handler.start()
-        logger.info("Socket Mode handler started successfully")
     except Exception as e:
         logger.error(f"Failed to start Socket Mode: {e}")
 
-if __name__ == "__main__":
-    # Initialize database
-    supabase_client.init_db()
+def initialize_app():
+    """Initialize application"""
+    logger.info("Initializing Leave Tracker Application...")
     
-    # Start scheduler for daily announcements
+    # Initialize database
+    if supabase_client.init_db():
+        logger.info("Database initialized successfully")
+    else:
+        logger.error("Failed to initialize database")
+    
+    # Start scheduler for daily announcements (9 AM daily)
     scheduler.add_job(
         post_daily_leave_announcements,
         trigger=CronTrigger(hour=9, minute=0),
         id="daily_leave_announcements"
     )
-    scheduler.start()
+    
+    if not scheduler.running:
+        scheduler.start()
+        logger.info("Scheduler started")
     
     # Start Socket Mode in a separate thread
-    import threading
     socket_thread = threading.Thread(target=start_socket_mode, daemon=True)
     socket_thread.start()
+    logger.info("Socket Mode thread started")
+
+if __name__ == "__main__":
+    initialize_app()
     
     # Start Flask app
     flask_app.run(host="0.0.0.0", port=5000, debug=False)

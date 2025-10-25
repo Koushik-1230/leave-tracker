@@ -3,17 +3,13 @@ leave-tracker/
 │   ├── namespace.yaml
 │   ├── configmap.yaml
 │   ├── secret.yaml
-│   ├── ngrok-deployment.yaml
-│   ├── flask-app-deployment.yaml
-│   └── service.yaml
-├── ngrok/
-│   └── Dockerfile
+│   └── flask-app-deployment.yaml
 ├── app/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── app.py
 │   ├── supabase_client.py
-│   ├── slack_utils.py
 │   └── database/
 │       └── init_schema.sql
+├── build.sh
 └── .env.example

@@ -25,14 +25,13 @@ CREATE TABLE IF NOT EXISTS user_leave_balances (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create indexes for better performance
+-- Create indexes
 CREATE INDEX IF NOT EXISTS idx_leave_requests_user_id ON leave_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
 CREATE INDEX IF NOT EXISTS idx_leave_requests_start_date ON leave_requests(start_date);
-CREATE INDEX IF NOT EXISTS idx_leave_requests_end_date ON leave_requests(end_date);
 CREATE INDEX IF NOT EXISTS idx_user_leave_balances_user_id ON user_leave_balances(user_id);
 
--- Create function to update updated_at timestamp
+-- Function to update updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -41,14 +40,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers for updated_at
-DROP TRIGGER IF EXISTS update_leave_requests_updated_at ON leave_requests;
+-- Triggers
 CREATE TRIGGER update_leave_requests_updated_at
     BEFORE UPDATE ON leave_requests
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_user_leave_balances_updated_at ON user_leave_balances;
 CREATE TRIGGER update_user_leave_balances_updated_at
     BEFORE UPDATE ON user_leave_balances
     FOR EACH ROW

@@ -46,7 +46,7 @@ build_image() {
 
 run_tests() {
     print_status "Running tests..."
-    docker run --rm -e SLACK_BOT_TOKEN=test -e SLACK_SIGNING_SECRET=test $APP_IMAGE:$TAG python -c "
+    docker run --rm -e SLACK_BOT_TOKEN=xoxb-5409967674016-9766229938086-2JutT7GqD78C7yHU836Nw6Vj -e SLACK_SIGNING_SECRET=a6aba9c33a9bebb75c381fc12434baee $APP_IMAGE:$TAG python -c "
 import sys
 try:
     from app import flask_app

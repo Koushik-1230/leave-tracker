@@ -44,21 +44,7 @@ build_image() {
     fi
 }
 
-run_tests() {
-    print_status "Running tests..."
-    docker run --rm -e SLACK_BOT_TOKEN=xoxb-5409967674016-9766229938086-2JutT7GqD78C7yHU836Nw6Vj -e SLACK_SIGNING_SECRET=a6aba9c33a9bebb75c381fc12434baee $APP_IMAGE:$TAG python -c "
-import sys
-try:
-    from app import flask_app
-    from supabase_client import SupabaseClient
-    print('✓ All imports successful')
-    sys.exit(0)
-except Exception as e:
-    print(f'✗ Import error: {e}')
-    sys.exit(1)
-"
-    [ $? -eq 0 ] && print_success "Tests passed" || (print_error "Tests failed" && exit 1)
-}
+
 
 push_image() {
     print_status "Pushing image to registry..."

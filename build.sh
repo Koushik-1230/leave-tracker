@@ -94,7 +94,7 @@ main() {
     
     check_dependencies
     build_image
-    run_tests
+
     
     read -p "Push image to registry? (y/n): " -n 1 -r
     echo

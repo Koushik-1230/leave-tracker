@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leave-tracker-config
+  namespace: leave-tracker
+data:
+  NGROK_DOMAIN: "your-custom-domain.ngrok.io"
+  FLASK_APP_SERVICE: "flask-app-service"
+  FLASK_APP_PORT: "5000"

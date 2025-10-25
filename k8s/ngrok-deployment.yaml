@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ngrok-deployment
+  namespace: leave-tracker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ngrok
+  template:
+    metadata:
+      labels:
+        app: ngrok
+    spec:
+      containers:
+      - name: ngrok
+        image: your-registry/leave-tracker-ngrok:latest
+        ports:
+        - containerPort: 4040
+        env:
+        - name: NGROK_AUTHTOKEN
+          valueFrom:
+            secretKeyRef:
+              name: leave-tracker-secrets
+              key: NGROK_AUTHTOKEN
+        - name: NGROK_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: leave-tracker-config
+              key: NGROK_DOMAIN
+        - name: FLASK_APP_SERVICE
+          valueFrom:
+            configMapKeyRef:
+              name: leave-tracker-config
+              key: FLASK_APP_SERVICE
+        - name: FLASK_APP_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: leave-tracker-config
+              key: FLASK_APP_PORT
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ngrok-internal-service
+  namespace: leave-tracker
+spec:
+  selector:
+    app: ngrok
+  ports:
+    - protocol: TCP
+      port: 4040
+      targetPort: 4040

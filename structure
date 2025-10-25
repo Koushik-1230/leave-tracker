@@ -1,0 +1,19 @@
+leave-tracker/
+├── k8s/
+│   ├── namespace.yaml
+│   ├── configmap.yaml
+│   ├── secret.yaml
+│   ├── ngrok-deployment.yaml
+│   ├── flask-app-deployment.yaml
+│   └── service.yaml
+├── ngrok/
+│   └── Dockerfile
+├── app/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py
+│   ├── supabase_client.py
+│   ├── slack_utils.py
+│   └── database/
+│       └── init_schema.sql
+└── .env.example
